@@ -6,7 +6,7 @@
       db "2. Hacer deposito",13,10
       db "3. Hacer retiro",13,10
       db "4. Consultar saldo",13,10
-      db "5. Mostrar reporte de cuenta",13,10
+      db "5. Mostrar reporte de cuentas",13,10
       db "6. Desactivar cuenta",13,10
       db "7. Salir",13,10  
       db "-Opcion:",13,10,"$"
@@ -14,11 +14,39 @@
  msg2 db "Hacer Deposito$"
  msg3 db "Hacer retiro$"
  msg4 db "Consultar Saldo$"
- msg5 db "Mostrar reporte de cuenta$"
+ msg5 db "Mostrar reporte de cuentas$"
  msg6 db "Desactivar cuenta$"
 
- msgErr db 13,10,"!Opcion invalida, intente de nuevo$"
-  
+ msgErr db 13,10,"!Opcion invalida, intente de nuevo$" 
+ msgSinCuenta db 13, 10, "La cuenta no existe, intente nuevamente$"
+ 
+ 
+ 
+ ; La estructura de datos suma 27 bytes en total por cuenta, sin embargo se redondeara a 32 para mayor facilidad
+ ; Con un total de 10 cuentas se reservaran 320 bytes de memoria en total.     
+ 
+ max_cuentas equ 10
+ tam_cuenta equ 32
+ 
+ cuentas db max_cuentas*TAM_CUENTA dup(0) 
+ 
+ contador_cuentas db 0 
+ 
+ numero_buscado dw 0
+ 
+ buffe_numero db 5
+              db ?
+              db 5 dup(?)  ; Reserva un arreglo de 5 bits sin inicializar para que se puedan utilizar 4 decimales + el bit de ENTER             
+ 
+ ; Segun la especificacion, las cuentas bancarias se manejaran de la siguiente manera 
+ ; Variable                     Offset (en bytes)
+ 
+ ; Numero de cuenta             0 
+ ; Nombre                       2
+ ; Saldo                        22
+ ; Estado                       26
+ 
+                    
 .code
 
 main proc
@@ -35,7 +63,10 @@ main proc
         int 21h             ; llamo a DOS para mostrar el mensaje en pantalla
         
         mov ah,01h          ; carga la funcion 01h de DOS para leer un solo caracter, el cual se guarda en al
-        int 21h             ; llamo a DOS para leer el mensaje
+        int 21h             ; llamo a DOS para leer el mensaje 
+        
+        mov cx, contador_cuentas ; carga el contador en el regitro cx
+        mov si, 0
         
 
     
@@ -138,9 +169,131 @@ main proc
         int 10h       ; llamo la interrupcion de video del BIOS
         
         ret           ; retorno a la linea siguiente de donde fue llamada la funcion 
+        
     
     
+main endp               ; fin del procedimiento principal   
 
+
+
+; ----------------------
+; Procedimientos
+; ---------------------- 
+
+
+calcular_offset proc
+    ; AL = indice
+    mov bl, al ; la parte baja de BX obtiene el indice que se encuentra AL
+    xor bh, bh ; Todos los bits de la parte alta de BX quedan en cero.
+    shl bx, 5  ; desplaza a la izquierda una cantidad de 2^5 = 32 veces cada bit de BX.
+    ; Es decir que el registro BX se desplazo 32 bits con respecto a su direccion original
+    ret                  
+calcular_offset endp
+                         
+
+; Util para depositar, retirar y consultar saldo.                    
+buscar_cuenta proc 
+    push cx       ; Anade los registros a la pila
+    push dx
+    push si
     
-main endp               ; fin del procedimiento principal
+    mov cx, contador_cuentas  
+    cmp cx, 0                ; Caso base, si no la encuentra
+    je no_encontrada
+    
+    xor si, si               ; Deja en 0 el registro SI
+    mov numero_buscado, ax 
+    
+    
+; implementa la busqueda lineal en la estructura de datos
+buscar_loop:  
+    mov al, si
+    call calcular_offset
+        
+    mov dx, [cuentas + bx] ; en DX se encuentra el resultado de la cuenta actual mas el offset requerido
+    cmp dx, numero_buscado ; compara si DX es igual al numero buscado y salta de serlo
+    je encontrada
+        
+    inc si
+    loop buscar_loop     ; de lo contrario continua la iteracion
+    
+     
+no_encontrada:
+    stc    
+    mov ah, 09h
+    lea dx, msgSinCuenta  
+    int 21h
+    jmp salir
+
+
+encontrada:
+    clc    
+         
+
+salir:
+    pop si
+    pop cx
+    pop bx
+    ret 
+    
+buscar_cuenta endp                
+
+
+; Procedimiento que permite leer numeros enteros de hasta 4 digitos; manejo de ASCII
+leer_numero proc
+    push bx 
+    push cx
+    push dx
+    push si
+    
+    mov ah, 0ah
+    lea dx, buffer_numero
+    int 21h
+    
+    xor ax, ax
+    xor bx, bx
+    
+    lea si, bufffer_numero+2
+    mov cl, buffer_numero+1
+    xor ch, ch
+    
+convertir_loop:
+    mov bl, [si]
+    
+    sub bl, '0'
+    
+    cmp bl,'0'
+    jb error
+
+    cmp bl,'9'
+    ja error
+    
+    mov dx, 10
+    mul dx  ; multiplica el valor de AX por 10  y luego lo suma
+    
+    add ax, bx 
+    
+    inc si 
+    loop convertir_loop
+    
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    ret
+    
+leer_numero endp
+
+; Como usarlo
+
+; call leer_numero
+; mov numero_buscado,ax
+
+; call buscar_cuenta
+
+; jc cuenta_no_existe 
+; cuenta_no_existe es un procedimiento que aun no se ha creado, es solo un ejemplo.   
+    
+    
+    
 end main                ; punto de entrada del programa
