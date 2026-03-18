@@ -22,7 +22,25 @@
  msgErrorNumero db 13,10,"Entrada invalida$" 
  msgVacio db 13,10,"No puede dejar el campo vacio$"
  
+ msgPedirNumero   db 13,10,"Ingrese el numero de cuenta: $"
+ msgCuentaExiste  db 13,10,"Ese numero de cuenta ya existe$"
+ msgCuentaCreada  db 13,10,"Cuenta creada correctamente$"
+ msgCuentaLlena   db 13,10,"Ya no se pueden crear mas cuentas$"
  
+ msgPedirDeposito   db 13,10,"Ingrese el numero de cuenta para depositar: $"
+ msgPedirMonto      db 13,10,"Ingrese el monto a depositar: $"
+ msgDepositoExito   db 13,10,"Deposito realizado correctamente$"
+ msgMontoInvalido   db 13,10,"El monto debe ser mayor que cero$"  
+ 
+ msgPedirConsulta  db 13,10,"Ingrese el numero de cuenta a consultar: $"
+ msgSaldoActual    db 13,10,"El saldo actual es: $"
+                                                      
+         
+ msgPedirRetiro      db 13,10,"Ingrese el numero de cuenta para retirar: $"
+ msgPedirMontoRet    db 13,10,"Ingrese el monto a retirar: $"
+ msgRetiroExito      db 13,10,"Retiro realizado correctamente$"
+ msgFondosInsuf      db 13,10,"Fondos insuficientes$"
+
  
  ; La estructura de datos suma 27 bytes en total por cuenta, sin embargo se redondeara a 32 para mayor facilidad
  ; Con un total de 10 cuentas se reservaran 320 bytes de memoria en total.     
@@ -99,32 +117,24 @@ main proc
         jmp opcion_invalida ; si no hay resultados, se salta a la etiqueta "opcion_invalida" 
               
     opcion1: 
-        call limpiar_pantalla ; limpio la pantalla        
-        mov ah, 09h         ; carga la funcion 09h de DOS para imprimir cadena terminada en $
-        lea dx, msg1        ; carga en DX la direccion donde comienza el mensaje en memoria
-        int 21h             ; llamo a DOS para mostrar el mensaje en pantalla
-        jmp fin
+        call limpiar_pantalla ; limpio la pantalla       
+        call crear_cuenta            
+        jmp menu_principal
              
     opcion2:
-        call limpiar_pantalla ; limpio la pantalla        
-        mov ah, 09h         ; carga la funcion 09h de DOS para imprimir cadena terminada en $
-        lea dx, msg2        ; carga en DX la direccion donde comienza el mensaje en memoria
-        int 21h             ; llamo a DOS para mostrar el mensaje en pantalla       
-        jmp fin
+        call limpiar_pantalla   ;limpia la pantalla
+        call depositar          ;llama a la funcion depositar
+        jmp menu_principal
               
     opcion3:
-        call limpiar_pantalla ; limpio la pantalla        
-        mov ah, 09h         ; carga la funcion 09h de DOS para imprimir cadena terminada en $
-        lea dx, msg3        ; carga en DX la direccion donde comienza el mensaje en memoria
-        int 21h             ; llamo a DOS para mostrar el mensaje en pantalla
-        jmp fin       
+        call limpiar_pantalla
+        call retirar
+        jmp menu_principal     
                
     opcion4:
-        call limpiar_pantalla ; limpio la pantalla        
-        mov ah, 09h         ; carga la funcion 09h de DOS para imprimir cadena terminada en $
-        lea dx, msg4        ; carga en DX la direccion donde comienza el mensaje en memoria
-        int 21h             ; llamo a DOS para mostrar el mensaje en pantalla
-        jmp fin
+        call limpiar_pantalla
+        call consultar_saldo
+        jmp menu_principal
                
     opcion5:
         call limpiar_pantalla ; limpio la pantalla        
@@ -206,10 +216,10 @@ buscar_loop:
     mov bx, si
     shl bx, 5 
     
-    lea si, cuentas
-    mov dx, [si + bx] ; en DX se encuentra el resultado de la cuenta actual mas el offset requerido
+    mov dx, word ptr [cuentas + bx] ; en DX se encuentra el resultado de la cuenta actual mas el offset requerido
     cmp dx, numero_buscado ; compara si DX es igual al numero buscado y salta de serlo
     je encontrada
+        
         
     inc si
     loop buscar_loop     ; de lo contrario continua la iteracion
@@ -217,9 +227,6 @@ buscar_loop:
      
 no_encontrada:
     stc    
-    mov ah, 09h
-    lea dx, msgSinCuenta  
-    int 21h
     jmp salir
 
 
@@ -230,11 +237,21 @@ encontrada:
 
 salir:
     pop si
+    pop dx
     pop cx
     pop bx
     ret 
     
-buscar_cuenta endp                
+buscar_cuenta endp  
+; Como usarlo
+
+; mov ax, numero_de_cuenta
+; call buscar_cuenta
+
+; AX devuelve el offset de la cuenta encontrada
+; ese offset se usa con:
+; cuentas + AX + offset_del_campo
+
 
 
 ; Procedimiento que permite leer numeros enteros de hasta 4 digitos; manejo de ASCII
@@ -277,7 +294,8 @@ convertir_loop:
     
     inc si 
     loop convertir_loop
-    
+     
+    clc
     pop si
     pop dx
     pop cx
@@ -321,59 +339,355 @@ leer_numero endp
 ; call buscar_cuenta
 
 ; jc cuenta_no_existe 
-; cuenta_no_existe es un procedimiento que aun no se ha creado, es solo un ejemplo.   
+; cuenta_no_existe.   
                     
-
-imprimir_numero proc
-    
+crear_cuenta proc
     push ax
     push bx
     push cx
     push dx
-    
-    mov cx, 0
-    mov bx, 10
-         
-         
-convertir:
 
-    xor dx, dx
-    div bx      ; realiza la division entre 10 de lo que se encuentra en AX 
     
-    push dx     ; envia nuevamente dx a la pila l valor de DX, que es el resto de la division
-    inc cx      
+    mov al, contador_cuentas    
+    cmp al, max_cuentas         ; Verifica si ya se llego al maximo de cuentas
+    je cuentas_llenas
+
     
-    cmp ax, 0   ; repite mientras ax sea distinto de cero al continuarlo dividiendo
-    jne convertir 
-    
-    mov dl, '0'
-    mov ah, 02h
+    mov ah, 09h
+    lea dx, msgPedirNumero      ; Pide el numero de cuenta
     int 21h
-    jmp fin
-    
 
-imprimir: 
-
-    pop dx   
-    add dl, '0'
     
-    mov ah, 02h 
+    call leer_numero            ; Lee el numero
+    jc salir_crear              ; si hubo error al leer, sale
+
+    
+    mov numero_buscado, ax      ; Guarda temporalmente el numero en numero_buscado
+
+    
+    call buscar_cuenta          ; Busca si ya existe
+    jnc cuenta_ya_existe        ; si carry=0, la cuenta ya existe
+
+    
+    xor bx, bx
+    mov bl, contador_cuentas    ; Calcula offset de la nueva cuenta
+    shl bx, 5
+
+    
+    mov ax, numero_buscado      ; Guarda numero de cuenta
+    mov word ptr [cuentas + bx], ax
+
+    mov word ptr [cuentas + bx + 22], 0 ; Saldo inicial = 0
+    mov word ptr [cuentas + bx + 24], 0
+
+    
+    mov byte ptr [cuentas + bx + 26], 1 ; Estado = activa
+
+  
+    inc contador_cuentas        ; Aumenta contador
+
+    
+    mov ah, 09h
+    lea dx, msgCuentaCreada     ; Mensaje de exito
     int 21h
-    
-    loop imprimir
-    
+    jmp salir_crear
+
+cuenta_ya_existe:
+    mov ah, 09h
+    lea dx, msgCuentaExiste
+    int 21h
+    jmp salir_crear
+
+cuentas_llenas:
+    mov ah, 09h
+    lea dx, msgCuentaLlena
+    int 21h
+
+salir_crear:
     pop dx
     pop cx
     pop bx
-    pop ax 
-    
+    pop ax
     ret
+crear_cuenta endp 
+; Como usarlo
 
+; call crear_cuenta
+
+; pide el numero de cuenta
+; verificar si ya existe
+; crear la cuenta si es valida
+
+
+
+depositar proc
+    push ax
+    push bx
+    push cx
+    push dx
+
+    
+    mov ah, 09h
+    lea dx, msgPedirDeposito    ; Pedir numero de cuenta
+    int 21h
+
+    
+    call leer_numero            ; Leer numero de cuenta
+    jc salir_depositar
+
+   
+    call buscar_cuenta          ; Buscar cuenta
+    jc cuenta_no_existe        
+
+    
+    mov bx, ax                  ; AX tiene el offset de la cuenta encontrada
+
+    
+    mov ah, 09h
+    lea dx, msgPedirMonto       ; Pedir monto
+    int 21h
+
+                                ; Leer monto
+    call leer_numero
+    jc salir_depositar
+
+    
+    cmp ax, 0                   ; Validar que sea mayor que 0
+    je monto_invalido
+
+    
+    add word ptr [cuentas + bx + 22], ax ; Sumar monto al saldo
+
+    
+    mov ah, 09h
+    lea dx, msgDepositoExito   ; Mensaje de exito
+    int 21h
+    jmp salir_depositar
+
+cuenta_no_existe:
+    mov ah, 09h
+    lea dx, msgSinCuenta       ;Mensaje cuenta no existe
+    int 21h
+    jmp salir_depositar
+
+monto_invalido:
+    mov ah, 09h
+    lea dx, msgMontoInvalido   ;Mensaje monto invalido
+    int 21h
+
+salir_depositar:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+depositar endp   
+; Como usarlo
+
+; call depositar
+
+; pide numero de cuenta
+; verificar si existe
+; pedir monto
+; sumar el monto al saldo
+
+
+retirar proc
+    push ax
+    push bx
+    push cx
+    push dx
+
+    
+    mov ah, 09h
+    lea dx, msgPedirRetiro    ; Pedir numero de cuenta
+    int 21h
+
+    
+    call leer_numero          ; Leer numero de cuenta
+    jc salir_retirar
+
+    
+    call buscar_cuenta        ; Buscar cuenta
+    jc cuenta_no_existe_retiro
+
+    
+    mov bx, ax                ; AX tiene el offset de la cuenta encontrada
+
+    
+    mov ah, 09h
+    lea dx, msgPedirMontoRet  ; Pedir monto a retirar
+    int 21h
+
+    
+    call leer_numero          ; Leer monto
+    jc salir_retirar
+
+    
+    cmp ax, 0
+    je monto_invalido_retiro  ; Validar que sea mayor que 0
+
+    
+    cmp ax, word ptr [cuentas + bx + 22]  ; Comparar monto con saldo actual
+    ja fondos_insuficientes
+
+    
+    sub word ptr [cuentas + bx + 22], ax ; Restar monto al saldo
+
+    
+    mov ah, 09h
+    lea dx, msgRetiroExito    ; Mensaje de exito
+    int 21h
+    jmp salir_retirar
+
+cuenta_no_existe_retiro:
+    mov ah, 09h
+    lea dx, msgSinCuenta
+    int 21h
+    jmp salir_retirar
+
+monto_invalido_retiro:
+    mov ah, 09h
+    lea dx, msgMontoInvalido
+    int 21h
+    jmp salir_retirar
+
+fondos_insuficientes:
+    mov ah, 09h
+    lea dx, msgFondosInsuf
+    int 21h
+
+salir_retirar:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+retirar endp   
+; Como usarlo
+
+; call retirar
+
+; El procedimiento se encarga de:
+; - pedir numero de cuenta
+; - verificar si existe
+; - pedir monto
+; - validar que haya saldo suficiente
+; - restar el monto
+
+; No devuelve valores, solo modifica memoria y muestra mensajes
+
+
+
+
+
+
+consultar_saldo proc
+    push ax
+    push bx
+    push cx
+    push dx
+
+    
+    mov ah, 09h
+    lea dx, msgPedirConsulta   ; Pedir numero de cuenta
+    int 21h
+
+    
+    call leer_numero           ;Leer numero de cuenta
+    jc salir_consulta
+
+    
+    call buscar_cuenta         ; Buscar cuenta
+    jc cuenta_no_existe_consulta
+
+    
+    mov bx, ax                 ; AX tiene el offset de la cuenta encontrada
+
+    
+    mov ah, 09h
+    lea dx, msgSaldoActual     ; Mostrar mensaje
+    int 21h
+
+    
+    mov ax, word ptr [cuentas + bx + 22]  ; Cargar saldo en AX
+
+    
+    call imprimir_numero      ; Imprimir saldo
+
+    jmp salir_consulta
+
+cuenta_no_existe_consulta:
+    mov ah, 09h
+    lea dx, msgSinCuenta
+    int 21h
+
+salir_consulta:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+consultar_saldo endp  
+; Como usarlo
+
+; call consultar_saldo
+
+; El procedimiento se encarga de:
+; - pedir numero de cuenta
+; - verificar si existe
+; - imprimir el saldo usando imprimir_numero
+                
+                
+                
+
+imprimir_numero proc
+    push ax
+    push bx
+    push cx
+    push dx
+
+    cmp ax, 0
+    jne convertir
+
+    mov dl, '0'
+    mov ah, 02h
+    int 21h
+    jmp terminar_imprimir
+
+convertir:
+    mov cx, 0
+    mov bx, 10
+
+ciclo_convertir:
+    xor dx, dx
+    div bx
+    push dx
+    inc cx
+    cmp ax, 0
+    jne ciclo_convertir
+
+imprimir:
+    pop dx
+    add dl, '0'
+    mov ah, 02h
+    int 21h
+    loop imprimir
+
+terminar_imprimir:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
 imprimir_numero endp
 
-; Modo de uso
-; mov ax, 1234
-; call imprimir_numero     
+; Como usarlo
+
+; mov ax, numero
+; call imprimir_numero
+
+; Imprime el numero contenido en AX en pantalla  
 
 
                   
@@ -387,29 +701,29 @@ imprimir_saldo proc
     mov bx, 10000
     
     xor dx, dx 
-    div bx     ; AX = parte entera, DX = parte decimal
+    div bx           ; AX = parte entera, DX = parte decimal
     
-    ; imprimir parte entera
-    push dx ; guardar decimal
+                     ; imprimir parte entera
+    push dx          ; guardar decimal
     call imprimir_numero
     
-    ; imprimir punto
-    mov ah, 02h
+    
+    mov ah, 02h      ; imprimir punto
     mov dl, '.'
     int 21h
     
-    ; recuperar decimal
-    pop ax
     
-    ; imprimir con ceros a la izquierda
-    mov cx, 4
+    pop ax           ; recuperar decimal
+    
+    
+    mov cx, 4        ; imprimir con ceros a la izquierda
     
 
 imprimir_decimales:
     
     mov bx, 10
     xor dx, dx
-    div dx     ; AX =  queda el cociente de la division entre 10, DX = decimal
+    div dx           ; AX =  queda el cociente de la division entre 10, DX = decimal
     
     push dx
     loop imprimir_decimales
@@ -419,7 +733,7 @@ imprimir_decimales:
  
 mostrar_decimales:
     pop dx
-    add dl, '0' ; lo pasa a su valor en ASCII para poder representarlo en pantalla
+    add dl, '0'      ; lo pasa a su valor en ASCII para poder representarlo en pantalla
     
     mov ah, 02h
     int 21h
@@ -433,7 +747,13 @@ mostrar_decimales:
     
     ret   
     
-imprimir_saldo endp
+imprimir_saldo endp 
+; Como usarlo
+
+; mov ax, saldo
+; call imprimir_saldo
+
+; Imprime el saldo con parte entera y decimal
     
     
     
