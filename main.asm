@@ -373,7 +373,69 @@ imprimir_numero endp
 
 ; Modo de uso
 ; mov ax, 1234
-; call imprimir_numero
+; call imprimir_numero     
+
+
+                  
+; Procedimiento que imprime el saldo de la cuenta con decimales
+imprimir_saldo proc 
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov bx, 10000
+    
+    xor dx, dx 
+    div bx     ; AX = parte entera, DX = parte decimal
+    
+    ; imprimir parte entera
+    push dx ; guardar decimal
+    call imprimir_numero
+    
+    ; imprimir punto
+    mov ah, 02h
+    mov dl, '.'
+    int 21h
+    
+    ; recuperar decimal
+    pop ax
+    
+    ; imprimir con ceros a la izquierda
+    mov cx, 4
+    
+
+imprimir_decimales:
+    
+    mov bx, 10
+    xor dx, dx
+    div dx     ; AX =  queda el cociente de la division entre 10, DX = decimal
+    
+    push dx
+    loop imprimir_decimales
+    
+    mov cx, 4
+    
+ 
+mostrar_decimales:
+    pop dx
+    add dl, '0' ; lo pasa a su valor en ASCII para poder representarlo en pantalla
+    
+    mov ah, 02h
+    int 21h
+    
+    loop mostrar_decimales
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    
+    ret   
+    
+imprimir_saldo endp
+    
+    
     
     
 end main                ; punto de entrada del programa
