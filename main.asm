@@ -18,7 +18,9 @@
  msg6 db "Desactivar cuenta$"
 
  msgErr db 13,10,"!Opcion invalida, intente de nuevo$" 
- msgSinCuenta db 13, 10, "La cuenta no existe, intente nuevamente$"
+ msgSinCuenta db 13, 10, "La cuenta no existe, intente nuevamente$"  
+ msgErrorNumero db 13,10,"Entrada invalida$" 
+ msgVacio db 13,10,"No puede dejar el campo vacio$"
  
  
  
@@ -34,9 +36,9 @@
  
  numero_buscado dw 0
  
- buffe_numero db 5
-              db ?
-              db 5 dup(?)  ; Reserva un arreglo de 5 bits sin inicializar para que se puedan utilizar 4 decimales + el bit de ENTER             
+ buffer_numero db 5
+               db ?
+               db 5 dup(?)  ; Reserva un arreglo de 5 bits sin inicializar para que se puedan utilizar 4 decimales + el bit de ENTER             
  
  ; Segun la especificacion, las cuentas bancarias se manejaran de la siguiente manera 
  ; Variable                     Offset (en bytes)
@@ -65,7 +67,8 @@ main proc
         mov ah,01h          ; carga la funcion 01h de DOS para leer un solo caracter, el cual se guarda en al
         int 21h             ; llamo a DOS para leer el mensaje 
         
-        mov cx, contador_cuentas ; carga el contador en el regitro cx
+        xor cx, cx
+        mov cl, contador_cuentas ; carga el contador en el regitro cx
         mov si, 0
         
 
@@ -180,25 +183,18 @@ main endp               ; fin del procedimiento principal
 ; Procedimientos
 ; ---------------------- 
 
-
-calcular_offset proc
-    ; AL = indice
-    mov bl, al ; la parte baja de BX obtiene el indice que se encuentra AL
-    xor bh, bh ; Todos los bits de la parte alta de BX quedan en cero.
-    shl bx, 5  ; desplaza a la izquierda una cantidad de 2^5 = 32 veces cada bit de BX.
-    ; Es decir que el registro BX se desplazo 32 bits con respecto a su direccion original
-    ret                  
-calcular_offset endp
                          
 
 ; Util para depositar, retirar y consultar saldo.                    
-buscar_cuenta proc 
+buscar_cuenta proc
+    push bx 
     push cx       ; Anade los registros a la pila
     push dx
     push si
     
-    mov cx, contador_cuentas  
-    cmp cx, 0                ; Caso base, si no la encuentra
+    xor cx, cx
+    mov cl, contador_cuentas  
+    cmp cl, 0                ; Caso base, si no la encuentra
     je no_encontrada
     
     xor si, si               ; Deja en 0 el registro SI
@@ -207,10 +203,11 @@ buscar_cuenta proc
     
 ; implementa la busqueda lineal en la estructura de datos
 buscar_loop:  
-    mov al, si
-    call calcular_offset
-        
-    mov dx, [cuentas + bx] ; en DX se encuentra el resultado de la cuenta actual mas el offset requerido
+    mov bx, si
+    shl bx, 5 
+    
+    lea si, cuentas
+    mov dx, [si + bx] ; en DX se encuentra el resultado de la cuenta actual mas el offset requerido
     cmp dx, numero_buscado ; compara si DX es igual al numero buscado y salta de serlo
     je encontrada
         
@@ -227,7 +224,8 @@ no_encontrada:
 
 
 encontrada:
-    clc    
+    clc
+    mov ax, bx ; devuelve el offset    
          
 
 salir:
@@ -253,24 +251,28 @@ leer_numero proc
     xor ax, ax
     xor bx, bx
     
-    lea si, bufffer_numero+2
+    lea si, buffer_numero+2
     mov cl, buffer_numero+1
-    xor ch, ch
+    xor ch, ch      
+    
+    cmp cx,0
+    je error_vacio     ; Error cuando hay un enter vacio
     
 convertir_loop:
-    mov bl, [si]
-    
-    sub bl, '0'
-    
+    xor bx, bx
+    mov bl, [si] 
+               
     cmp bl,'0'
     jb error
 
-    cmp bl,'9'
-    ja error
+    cmp bl,'9' 
+    ja error   
+    
+    sub bl, '0'
     
     mov dx, 10
     mul dx  ; multiplica el valor de AX por 10  y luego lo suma
-    
+                                 
     add ax, bx 
     
     inc si 
@@ -280,8 +282,35 @@ convertir_loop:
     pop dx
     pop cx
     pop bx
+    ret    
+    
+    
+error:
+    mov ah,09h
+    lea dx,msgErrorNumero
+    int 21h
+    stc 
+    
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    ret   
+    
+    
+error_vacio:
+    mov ah,09h
+    lea dx,msgVacio
+    int 21h
+    stc
+
+    pop si
+    pop dx
+    pop cx
+    pop bx
     ret
     
+   
 leer_numero endp
 
 ; Como usarlo
@@ -293,6 +322,119 @@ leer_numero endp
 
 ; jc cuenta_no_existe 
 ; cuenta_no_existe es un procedimiento que aun no se ha creado, es solo un ejemplo.   
+                    
+
+imprimir_numero proc
+    
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov cx, 0
+    mov bx, 10
+         
+         
+convertir:
+
+    xor dx, dx
+    div bx      ; realiza la division entre 10 de lo que se encuentra en AX 
+    
+    push dx     ; envia nuevamente dx a la pila l valor de DX, que es el resto de la division
+    inc cx      
+    
+    cmp ax, 0   ; repite mientras ax sea distinto de cero al continuarlo dividiendo
+    jne convertir 
+    
+    mov dl, '0'
+    mov ah, 02h
+    int 21h
+    jmp fin
+    
+
+imprimir: 
+
+    pop dx   
+    add dl, '0'
+    
+    mov ah, 02h 
+    int 21h
+    
+    loop imprimir
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax 
+    
+    ret
+
+imprimir_numero endp
+
+; Modo de uso
+; mov ax, 1234
+; call imprimir_numero     
+
+
+                  
+; Procedimiento que imprime el saldo de la cuenta con decimales
+imprimir_saldo proc 
+    push ax
+    push bx
+    push cx
+    push dx
+    
+    mov bx, 10000
+    
+    xor dx, dx 
+    div bx     ; AX = parte entera, DX = parte decimal
+    
+    ; imprimir parte entera
+    push dx ; guardar decimal
+    call imprimir_numero
+    
+    ; imprimir punto
+    mov ah, 02h
+    mov dl, '.'
+    int 21h
+    
+    ; recuperar decimal
+    pop ax
+    
+    ; imprimir con ceros a la izquierda
+    mov cx, 4
+    
+
+imprimir_decimales:
+    
+    mov bx, 10
+    xor dx, dx
+    div dx     ; AX =  queda el cociente de la division entre 10, DX = decimal
+    
+    push dx
+    loop imprimir_decimales
+    
+    mov cx, 4
+    
+ 
+mostrar_decimales:
+    pop dx
+    add dl, '0' ; lo pasa a su valor en ASCII para poder representarlo en pantalla
+    
+    mov ah, 02h
+    int 21h
+    
+    loop mostrar_decimales
+    
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    
+    ret   
+    
+imprimir_saldo endp
+    
     
     
     
