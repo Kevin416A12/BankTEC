@@ -904,7 +904,16 @@ nombre_impreso:
     mov ah,09h
     lea dx,msgInactiva
     int 21h
+    
+    mov ah,02h
+    mov dl,13
+    int 21h
+    mov dl,10
+    int 21h
+    
     jmp continuar
+    
+    
 
     es_activa:
     mov ah,09h
