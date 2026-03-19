@@ -24,7 +24,7 @@
  
  msgPedirNumero   db 13,10,"Ingrese el numero de cuenta: $"
  msgCuentaExiste  db 13,10,"Ese numero de cuenta ya existe$"
- msgCuentaCreada  db 13,10,"Cuenta creada correctamente$"
+ msgCuentaCreada  db 13,10,"Cuenta creada correctamente y su numero de cuenta es $"
  msgCuentaLlena   db 13,10,"Ya no se pueden crear mas cuentas$"
  
  msgPedirDeposito   db 13,10,"Ingrese el numero de cuenta para depositar: $"
@@ -40,6 +40,15 @@
  msgPedirMontoRet    db 13,10,"Ingrese el monto a retirar: $"
  msgRetiroExito      db 13,10,"Retiro realizado correctamente$"
  msgFondosInsuf      db 13,10,"Fondos insuficientes$"
+ msgOverflow db 13,10, "Saldo demasiado grande para mostrar$"
+ msgFormatoMonto db 13,10, "Ingrese monto sin punto (ej: 12345678 = 1234.5678)$" 
+ 
+ msgActiva db " Activa$"
+ msgInactiva db " Inactiva$" 
+ 
+msgCuentaActivada db 13,10,"Cuenta activada$"
+msgCuentaDesactivada db 13,10,"Cuenta desactivada$"
+msgCuentaInactiva db 13,10,"Cuenta inactiva$"
 
  
  ; La estructura de datos suma 27 bytes en total por cuenta, sin embargo se redondeara a 32 para mayor facilidad
@@ -48,15 +57,15 @@
  max_cuentas equ 10
  tam_cuenta equ 32
  
- cuentas db max_cuentas*TAM_CUENTA dup(0) 
+ cuentas db 320 dup(?) 
  
  contador_cuentas db 0 
  
  numero_buscado dw 0
  
- buffer_numero db 5
+ buffer_numero db 10
                db ?
-               db 5 dup(?)  ; Reserva un arreglo de 5 bits sin inicializar para que se puedan utilizar 4 decimales + el bit de ENTER             
+               db 10 dup(?)  ; Reserva un arreglo de 5 bits sin inicializar para que se puedan utilizar 4 decimales + el bit de ENTER             
  
  ; Segun la especificacion, las cuentas bancarias se manejaran de la siguiente manera 
  ; Variable                     Offset (en bytes)
@@ -107,7 +116,7 @@ main proc
         cmp al, '5'
         je opcion5              
                   
-        cmp al, '6'
+        cmp al, '6'                                             
         je opcion6
         
         cmp al, '7'
@@ -117,7 +126,7 @@ main proc
         jmp opcion_invalida ; si no hay resultados, se salta a la etiqueta "opcion_invalida" 
               
     opcion1: 
-        call limpiar_pantalla ; limpio la pantalla       
+        call limpiar_pantalla ; limpio la pantalla    
         call crear_cuenta            
         jmp menu_principal
              
@@ -138,17 +147,13 @@ main proc
                
     opcion5:
         call limpiar_pantalla ; limpio la pantalla        
-        mov ah, 09h         ; carga la funcion 09h de DOS para imprimir cadena terminada en $
-        lea dx, msg5        ; carga en DX la direccion donde comienza el mensaje en memoria
-        int 21h             ; llamo a DOS para mostrar el mensaje en pantalla
-        jmp fin
+        call reporte_cuentas
+        jmp menu_principal
               
     opcion6:
         call limpiar_pantalla ; limpio la pantalla        
-        mov ah, 09h         ; carga la funcion 09h de DOS para imprimir cadena terminada en $
-        lea dx, msg6        ; carga en DX la direccion donde comienza el mensaje en memoria
-        int 21h             ; llamo a DOS para mostrar el mensaje en pantalla
-        jmp fin
+        call cambiar_estado
+        jmp menu_principal
         
     ;Se encarga de limpiar la pantalla y volver a mostrar el menu principal
     opcion_invalida:
@@ -182,6 +187,7 @@ main proc
         int 10h       ; llamo la interrupcion de video del BIOS
         
         ret           ; retorno a la linea siguiente de donde fue llamada la funcion 
+    
         
     
     
@@ -330,6 +336,7 @@ error_vacio:
     
    
 leer_numero endp
+
 
 ; Como usarlo
 
@@ -481,7 +488,8 @@ salir_depositar:
     pop bx
     pop ax
     ret
-depositar endp   
+depositar endp  
+
 ; Como usarlo
 
 ; call depositar
@@ -579,9 +587,6 @@ retirar endp
 
 
 
-
-
-
 consultar_saldo proc
     push ax
     push bx
@@ -628,7 +633,7 @@ salir_consulta:
     pop bx
     pop ax
     ret
-consultar_saldo endp  
+consultar_saldo endp
 ; Como usarlo
 
 ; call consultar_saldo
@@ -636,8 +641,7 @@ consultar_saldo endp
 ; El procedimiento se encarga de:
 ; - pedir numero de cuenta
 ; - verificar si existe
-; - imprimir el saldo usando imprimir_numero
-                
+; - imprimir el saldo usando imprimir_numero               
                 
                 
 
@@ -682,6 +686,7 @@ terminar_imprimir:
     ret
 imprimir_numero endp
 
+
 ; Como usarlo
 
 ; mov ax, numero
@@ -690,72 +695,179 @@ imprimir_numero endp
 ; Imprime el numero contenido en AX en pantalla  
 
 
-                  
-; Procedimiento que imprime el saldo de la cuenta con decimales
-imprimir_saldo proc 
+
+
+saldo_total proc
     push ax
     push bx
     push cx
     push dx
+    push di
     
-    mov bx, 10000
-    
+    xor ax, ax    ; acumulador total = 0
     xor dx, dx 
-    div bx           ; AX = parte entera, DX = parte decimal
     
-                     ; imprimir parte entera
-    push dx          ; guardar decimal
-    call imprimir_numero
+    lea di, cuentas ; pointer a las cuentas
     
+    xor cx, cx
+    mov cl, contador_cuentas
     
-    mov ah, 02h      ; imprimir punto
-    mov dl, '.'
-    int 21h
-    
-    
-    pop ax           ; recuperar decimal
-    
-    
-    mov cx, 4        ; imprimir con ceros a la izquierda
-    
+sumar_loop:
 
-imprimir_decimales:
+    cmp cx, 0
+    je fin
     
-    mov bx, 10
-    xor dx, dx
-    div dx           ; AX =  queda el cociente de la division entre 10, DX = decimal
+    mov bx, [di + 2] ; saldo de la cuenta
+    add ax, bx       ; acumular          
+                                            
+    adc dx, 0 ; manejar carry                                            
+    add di, 32 ; salta a la siguiente cuenta
+                                
+    dec cx
+    jmp sumar_loop
     
-    push dx
-    loop imprimir_decimales
+fin_st:
+    ; resultado queda en AX
     
-    mov cx, 4
-    
- 
-mostrar_decimales:
-    pop dx
-    add dl, '0'      ; lo pasa a su valor en ASCII para poder representarlo en pantalla
-    
-    mov ah, 02h
-    int 21h
-    
-    loop mostrar_decimales
-    
+    pop di
     pop dx
     pop cx
     pop bx
     pop ax
     
-    ret   
+    ret
     
-imprimir_saldo endp 
-; Como usarlo
+saldo_total endp
 
-; mov ax, saldo
-; call imprimir_saldo
+; Se usa llamando a saldo_total y luego a imprimir saldo
 
-; Imprime el saldo con parte entera y decimal
+reporte_cuentas proc
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+
+    mov cl, contador_cuentas
+    xor ch, ch
+    xor si, si
+
+reporte_loop:
+
+    cmp cx,0
+    je fin_reporte
+
+    ; calcular offset
+    mov bx, si
+    shl bx,5
+
+    ; imprimir numero de cuenta
+    mov ax, word ptr [cuentas + bx]
+    call imprimir_numero
+
+    ; espacio
+    mov ah,02h
+    mov dl,' '
+    int 21h
+
+    ; imprimir saldo    
+    mov ax, word ptr [cuentas + bx + 22]
+    call imprimir_numero
+
+    ; salto de linea
+    mov ah,02h
+    mov dl,13
+    int 21h
+    mov dl,10
+    int 21h
     
-    
-    
+    mov al, byte ptr [cuentas + bx + 26]
+
+    cmp al,1
+    je es_activa
+
+    ; inactiva
+    mov ah,09h
+    lea dx,msgInactiva
+    int 21h
+    jmp continuar
+
+    es_activa:
+    mov ah,09h
+    lea dx,msgActiva
+    int 21h
+
+continuar:
+
+    inc si
+    loop reporte_loop 
+
+fin_reporte:
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+reporte_cuentas endp 
+
+
+cambiar_estado proc
+    push ax
+    push bx
+    push cx
+    push dx
+
+    ; pedir cuenta
+    mov ah,09h
+    lea dx,msgPedirConsulta
+    int 21h
+
+    call leer_numero
+    jc salir_cam_es
+
+    call buscar_cuenta
+    jc no_existe
+
+    mov bx,ax
+
+    ; leer estado actual
+    mov al, byte ptr [cuentas + bx + 26]
+
+    cmp al,1
+    je desactivar
+
+activar:
+    mov al,1
+    mov byte ptr [cuentas + bx + 26],al
+
+    mov ah,09h
+    lea dx,msgCuentaActivada
+    int 21h
+    jmp salir_cam_es
+
+desactivar:
+    mov al,0
+    mov byte ptr [cuentas + bx + 26],al
+
+    mov ah,09h
+    lea dx,msgCuentaDesactivada
+    int 21h
+    jmp salir_cam_es
+
+no_existe:
+    mov ah,09h
+    lea dx,msgSinCuenta
+    int 21h
+
+salir_cam_es:
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+cambiar_estado endp 
+                 
+
     
 end main                ; punto de entrada del programa
