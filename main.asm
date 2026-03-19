@@ -51,10 +51,13 @@
  msgCuentaDesactivada db 13,10,"Cuenta desactivada$"
  msgCuentaInactiva db 13,10,"Cuenta inactiva$" 
  
- msgHeader db 13,10,"Cuenta   Saldo   Estado",13,10,"------------------------",13,10,"$"
+ msgHeader db 13,10,"Cuenta   Nombre               Saldo   Estado",13,10,"------------------------------------------------",13,10,"$"
  msgLinea  db 13,10,"------------------------",13,10,"$"
  msgTotal  db "Total: $"
+ 
+ msgPedirNombre   db 13,10,"Ingrese el nombre del titular: $"
 
+ 
  
  ; La estructura de datos suma 27 bytes en total por cuenta, sin embargo se redondeara a 32 para mayor facilidad
  ; Con un total de 10 cuentas se reservaran 320 bytes de memoria en total.     
@@ -80,7 +83,9 @@
  ; Saldo                        22
  ; Estado                       26
  
-                    
+buffer_nombre    db 21        ; maximo 20 caracteres + ENTER
+                 db ?
+                 db 21 dup(?) ; buffer de 21 bytes                    
 .code
 
 main proc
@@ -380,6 +385,56 @@ crear_cuenta proc
     
     mov ax, numero_buscado      ; Guarda numero de cuenta
     mov word ptr [cuentas + bx], ax
+    
+    
+    mov ah, 09h
+    lea dx, msgPedirNombre
+    int 21h
+
+    ; Leer nombre con funcion 0Ah (entrada con buffer)
+    mov ah, 0Ah
+    lea dx, buffer_nombre
+    int 21h
+
+    ; Copiar nombre al campo offset+2 de la cuenta
+    ; bx ya tiene el offset de la cuenta (ej: 0, 32, 64...)
+    lea si, buffer_nombre + 2   ; SI apunta al texto ingresado
+    xor ch, ch
+    mov cl, buffer_nombre + 1   ; CL = cantidad real de caracteres leidos
+    
+    cmp cx, 0
+    je nombre_vacio             ; si no escribio nada, saltar
+
+    lea di, cuentas             ; DI apunta al arreglo de cuentas
+    add di, bx                  ; DI apunta al inicio de esta cuenta
+    add di, 2                   ; DI ahora apunta al campo Nombre (offset 2)
+
+copiar_nombre:
+    mov al, [si]
+    mov [di], al
+    inc si
+    inc di
+    loop copiar_nombre
+
+    jmp nombre_ok
+
+nombre_vacio:
+    ; Guardar un espacio o dejar en 0 si no escribio nada (opcional)
+    lea di, cuentas
+    add di, bx
+    add di, 2
+    mov byte ptr [di], 0        ; primer byte del nombre = null
+
+nombre_ok:
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
     mov word ptr [cuentas + bx + 22], 0 ; Saldo inicial = 0
     mov word ptr [cuentas + bx + 24], 0
@@ -775,7 +830,62 @@ reporte_loop:
     int 21h
     mov dl,' '
     int 21h
+    
+    
+ ; imprimir nombre del titular
+    push cx                     ; guardar contador del loop
+                            
+    lea di, cuentas
+    add di, bx
+    add di, 2                   ; DI apunta al campo Nombre
 
+    mov cx, 20                  ; maximo 20 caracteres
+
+imprimir_nombre_loop:
+    mov al, [di]
+    cmp al, 0                   ; si encuentra null, terminar nombre
+    je rellenar_espacios
+    cmp al, 13                  ; si encuentra CR, terminar nombre
+    je rellenar_espacios
+
+    mov ah, 02h
+    mov dl, al
+    int 21h
+
+    inc di
+    dec cx
+    jnz imprimir_nombre_loop
+    jmp nombre_impreso
+
+rellenar_espacios:              ; rellenar con espacios para alinear columnas
+    cmp cx, 0
+    je nombre_impreso
+    mov ah, 02h
+    mov dl, ' '
+    int 21h
+    dec cx
+    jmp rellenar_espacios
+
+nombre_impreso:
+    pop cx 
+    mov ah,02h
+    mov dl,' '
+    int 21h
+    mov dl,' '
+    int 21h
+    mov dl,' '
+    int 21h 
+    mov dl,' '
+    int 21h 
+    mov dl,' '
+    int 21h 
+    mov dl,' '
+    int 21h 
+    mov dl,' '
+    int 21h    
+    
+    
+   
     ; imprimir saldo    
     mov ax, word ptr [cuentas + bx + 22]
     call imprimir_numero 
