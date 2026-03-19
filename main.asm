@@ -42,13 +42,18 @@
  msgFondosInsuf      db 13,10,"Fondos insuficientes$"
  msgOverflow db 13,10, "Saldo demasiado grande para mostrar$"
  msgFormatoMonto db 13,10, "Ingrese monto sin punto (ej: 12345678 = 1234.5678)$" 
+ msgSaldoTotal db 13, 10, "El saldo total del banco es: $"
  
  msgActiva db " Activa$"
  msgInactiva db " Inactiva$" 
  
-msgCuentaActivada db 13,10,"Cuenta activada$"
-msgCuentaDesactivada db 13,10,"Cuenta desactivada$"
-msgCuentaInactiva db 13,10,"Cuenta inactiva$"
+ msgCuentaActivada db 13,10,"Cuenta activada$"
+ msgCuentaDesactivada db 13,10,"Cuenta desactivada$"
+ msgCuentaInactiva db 13,10,"Cuenta inactiva$" 
+ 
+ msgHeader db 13,10,"Cuenta   Saldo   Estado",13,10,"------------------------",13,10,"$"
+ msgLinea  db 13,10,"------------------------",13,10,"$"
+ msgTotal  db "Total: $"
 
  
  ; La estructura de datos suma 27 bytes en total por cuenta, sin embargo se redondeara a 32 para mayor facilidad
@@ -360,20 +365,12 @@ crear_cuenta proc
     je cuentas_llenas
 
     
-    mov ah, 09h
-    lea dx, msgPedirNumero      ; Pide el numero de cuenta
-    int 21h
+    ; generar numero automatico
+    xor ax, ax
+    mov al, contador_cuentas
+    inc ax                  ; cuentas empiezan en 1
 
-    
-    call leer_numero            ; Lee el numero
-    jc salir_crear              ; si hubo error al leer, sale
-
-    
-    mov numero_buscado, ax      ; Guarda temporalmente el numero en numero_buscado
-
-    
-    call buscar_cuenta          ; Busca si ya existe
-    jnc cuenta_ya_existe        ; si carry=0, la cuenta ya existe
+    mov numero_buscado, ax
 
     
     xor bx, bx
@@ -396,7 +393,10 @@ crear_cuenta proc
     
     mov ah, 09h
     lea dx, msgCuentaCreada     ; Mensaje de exito
-    int 21h
+    int 21h 
+    mov ax, numero_buscado
+    call imprimir_numero
+    
     jmp salir_crear
 
 cuenta_ya_existe:
@@ -697,43 +697,41 @@ imprimir_numero endp
 
 
 
-saldo_total proc
-    push ax
+saldo_total proc 
     push bx
     push cx
     push dx
-    push di
+    push si
     
-    xor ax, ax    ; acumulador total = 0
-    xor dx, dx 
+    xor ax, ax    ; acumulador total = 0 
     
     lea di, cuentas ; pointer a las cuentas
     
     xor cx, cx
-    mov cl, contador_cuentas
+    mov cl, contador_cuentas  
+    
+    xor si, si
     
 sumar_loop:
-
+             
     cmp cx, 0
-    je fin
+    je fin_st
     
-    mov bx, [di + 2] ; saldo de la cuenta
-    add ax, bx       ; acumular          
+    mov bx, si ; saldo de la cuenta
+    shl bx, 5       ; acumular          
                                             
-    adc dx, 0 ; manejar carry                                            
-    add di, 32 ; salta a la siguiente cuenta
-                                
+    add ax, word ptr [cuentas + bx + 22]
+    
+    inc si
     dec cx
     jmp sumar_loop
     
-fin_st:
+fin_st: 
     ; resultado queda en AX
-    
-    pop di
+    pop si
     pop dx
     pop cx
-    pop bx
-    pop ax
+    pop bx    
     
     ret
     
@@ -751,10 +749,14 @@ reporte_cuentas proc
     mov cl, contador_cuentas
     xor ch, ch
     xor si, si
+    
+    mov ah,09h
+    lea dx,msgHeader
+    int 21h
 
 reporte_loop:
 
-    cmp cx,0
+    cmp cx,0 
     je fin_reporte
 
     ; calcular offset
@@ -763,24 +765,26 @@ reporte_loop:
 
     ; imprimir numero de cuenta
     mov ax, word ptr [cuentas + bx]
-    call imprimir_numero
-
-    ; espacio
+    call imprimir_numero 
+    
+    ; espacios para alinear
     mov ah,02h
+    mov dl,' '
+    int 21h
+    mov dl,' '
+    int 21h
     mov dl,' '
     int 21h
 
     ; imprimir saldo    
     mov ax, word ptr [cuentas + bx + 22]
-    call imprimir_numero
-
-    ; salto de linea
-    mov ah,02h
-    mov dl,13
-    int 21h
-    mov dl,10
-    int 21h
+    call imprimir_numero 
     
+    mov ah,02h
+    mov dl,' '
+    int 21h
+    mov dl,' '
+    int 21h
     mov al, byte ptr [cuentas + bx + 26]
 
     cmp al,1
@@ -797,18 +801,52 @@ reporte_loop:
     lea dx,msgActiva
     int 21h
 
+    ; salto de linea
+    mov ah,02h
+    mov dl,13
+    int 21h
+    mov dl,10
+    int 21h
+    
 continuar:
 
     inc si
-    loop reporte_loop 
+    loop reporte_loop
 
-fin_reporte:
+fin_reporte:     
+
+    mov ah,02h
+    mov dl,13
+    int 21h
+    mov dl,10
+    int 21h
+
+    ; calcular saldo total
+    call saldo_total
+
+    ; imprimir mensaje
+    mov bx, ax
+    mov ah, 09h
+    lea dx, msgSaldoTotal
+    int 21h
+    
+    mov ax, bx
+    ; imprimir total
+    call imprimir_numero
+
+    mov ah,02h
+    mov dl,13
+    int 21h
+    mov dl,10
+    int 21h
+    
     pop si
     pop dx
     pop cx
     pop bx
     pop ax
     ret
+    
 reporte_cuentas endp 
 
 
