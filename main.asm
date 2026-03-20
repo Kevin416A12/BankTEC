@@ -198,8 +198,6 @@ main proc
         
         ret           ; retorno a la linea siguiente de donde fue llamada la funcion 
     
-        
-    
     
 main endp               ; fin del procedimiento principal   
 
@@ -426,15 +424,6 @@ nombre_vacio:
     mov byte ptr [di], 0        ; primer byte del nombre = null
 
 nombre_ok:
-    
-    
-    
-    
-    
-    
-    
-    
-    
 
     mov word ptr [cuentas + bx + 22], 0 ; Saldo inicial = 0
     mov word ptr [cuentas + bx + 24], 0
@@ -502,7 +491,11 @@ depositar proc
     jc cuenta_no_existe        
 
     
-    mov bx, ax                  ; AX tiene el offset de la cuenta encontrada
+    mov bx, ax 
+                                ; AX tiene el offset de la cuenta encontrada 
+    ; Validar si esta activa
+    cmp byte ptr [cuentas + bx + 26], 1
+    jne cuenta_inactiva_de
 
     
     mov ah, 09h
@@ -519,6 +512,8 @@ depositar proc
 
     
     add word ptr [cuentas + bx + 22], ax ; Sumar monto al saldo
+    add word ptr [cuentas + bx + 24], 0
+    jc overflow_deposito
 
     
     mov ah, 09h
@@ -542,7 +537,20 @@ salir_depositar:
     pop cx
     pop bx
     pop ax
-    ret
+    ret         
+    
+overflow_deposito:
+    mov ah, 09h
+    lea dx, msgOverflow
+    int 21h
+    jmp salir_depositar
+    
+cuenta_inactiva_de:
+    mov ah, 09h
+    lea dx, msgCuentaInactiva
+    int 21h
+    jmp salir_depositar    
+    
 depositar endp  
 
 ; Como usarlo
@@ -576,6 +584,10 @@ retirar proc
 
     
     mov bx, ax                ; AX tiene el offset de la cuenta encontrada
+    
+    ; Validar si esta activa
+    cmp byte ptr [cuentas + bx + 26], 1
+    jne cuenta_inactiva_re
 
     
     mov ah, 09h
@@ -625,7 +637,13 @@ salir_retirar:
     pop cx
     pop bx
     pop ax
-    ret
+    ret   
+    
+cuenta_inactiva_re:
+    mov ah, 09h
+    lea dx, msgCuentaInactiva
+    int 21h
+    jmp salir_retirar    
 retirar endp   
 ; Como usarlo
 
